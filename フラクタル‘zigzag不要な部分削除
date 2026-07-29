@@ -1,0 +1,424 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © njs05
+
+//@version=6
+indicator("ジグザグ1時間軽量化7/29", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ライブラリのインポート
+import njs05/ZigZag/1 as Zig
+
+// --- ZigZag 設定 ---
+float deviationInput = input.float(8.5, 'Deviation (%)', minval=0.00001, maxval=100.0)
+int depthInput = input.int(1, 'Depth', minval=1)
+color lineColorInput = input.color(#2962FF, 'Line Color')
+bool extendInput = input.bool(true, 'Extend Last Pivot')
+string priceDiffInput = input.string('Percent', '', options=['Absolute','Percent'])
+
+var Zig.Settings settings = Zig.Settings.new(
+    deviationInput,
+    depthInput,
+    lineColorInput,
+    extendInput,
+    false,
+    false,
+    false,
+    "Percent")
+var Zig.ZigZag zigZag = Zig.newInstance(settings)
+
+
+
+
+// ================================
+// 小さい波用 ZigZag (Deviation
+// ================================
+
+int bigWaveLookback = input.int(
+     1,
+     "8.5波の参照数",
+     minval=1,
+     maxval=100)
+
+
+float smallDeviationInput = input.float(
+     3.5,
+     "Small ZigZag Deviation (%)",
+     minval=0.00001,
+     maxval=100)
+
+
+var Zig.Settings smallSettings =
+     Zig.Settings.new(
+          smallDeviationInput,
+          depthInput,
+          color.orange,
+          extendInput,
+          false,
+          false,
+          false,
+          priceDiffInput)
+
+
+var Zig.ZigZag smallZigZag =
+     Zig.newInstance(smallSettings)
+
+
+
+
+// 表の設定
+var table topRightTable = table.new(
+     position.bottom_right,
+     3,
+     5,
+     border_width = 1,
+     frame_color = color.white)
+color plusTextColor = color.white
+color plusBgColor = color.new(color.green, 70)
+color minusTextColor = color.white
+color minusBgColor = color.new(color.red, 70)
+int lookbackPlus = input.int(20, "Number of positive differences for average", minval=1)//プラスのピボットの個数
+int lookbackMinus = input.int(20, "Number of negative differences for average", minval=1)//マイナスのピボットの個数
+//int lookbackPivotInput = input.int(20, "Number of pivots for average time", minval = 2)//平均時間
+
+// --- ZigZag 更新 ---
+zigZag.update()
+smallZigZag.update()
+
+
+//変数
+//=========================================
+// 上昇8.5波内の押し率・利益率
+//=========================================
+
+float avgPullbackPercent = na
+float avgPullbackProfit  = na
+
+int bigCount   = zigZag.pivots.size()
+int smallCount = smallZigZag.pivots.size()
+
+if bigCount >= 2 and smallCount >= 3
+
+    float sumPullback       = 0.0
+    float sumPullbackProfit = 0.0
+    int   countPullback     = 0
+
+    int waveCount = 0
+    int b = bigCount - 1
+
+    while b > 0 and waveCount < bigWaveLookback
+
+        Zig.Pivot bigHigh = zigZag.pivots.get(b)
+        Zig.Pivot bigLow  = zigZag.pivots.get(b - 1)
+
+        float bigMove = bigHigh.end.price - bigLow.end.price
+
+        // 上昇8.5波だけ
+        if bigMove > 0
+
+            int startTime = int(bigLow.end.time)
+            int endTime   = int(bigHigh.end.time)
+
+            // 古い→新しいで走査
+            int s = 1
+
+            while s < smallCount - 1
+
+                Zig.Pivot prevPivot = smallZigZag.pivots.get(s - 1)
+                Zig.Pivot lowPivot  = smallZigZag.pivots.get(s)
+                Zig.Pivot nextPivot = smallZigZag.pivots.get(s + 1)
+
+                // 3点とも8.5波の中
+                if prevPivot.end.time >= startTime and nextPivot.end.time <= endTime
+
+                    // 高値→安値→高値
+                    if prevPivot.end.price > lowPivot.end.price and nextPivot.end.price > lowPivot.end.price
+
+                        // 押し率
+                        float pullbackPercent =
+                             (prevPivot.end.price - lowPivot.end.price) /
+                             prevPivot.end.price * 100
+
+                        sumPullback += pullbackPercent
+
+                        // 利益率（押し安値→次の高値）
+                        float profitPercent =
+                             (nextPivot.end.price - lowPivot.end.price) /
+                             lowPivot.end.price * 100
+
+                        sumPullbackProfit += profitPercent
+
+                        countPullback += 1
+
+                s += 1
+
+            waveCount += 1
+
+        b -= 1
+
+    if countPullback > 0
+        avgPullbackPercent := sumPullback / countPullback
+        avgPullbackProfit  := sumPullbackProfit / countPullback
+
+
+//=========================================
+// 下降8.5波内の戻り率・利益率
+//=========================================
+
+float avgReboundPercent = na
+float avgReboundProfit  = na
+
+int bigCountDown   = zigZag.pivots.size()
+int smallCountDown = smallZigZag.pivots.size()
+
+if bigCountDown >= 2 and smallCountDown >= 3
+
+    float sumRebound       = 0.0
+    float sumReboundProfit = 0.0
+    int   countRebound     = 0
+
+    int waveCount = 0
+    int b = bigCountDown - 1
+
+    while b > 0 and waveCount < bigWaveLookback
+
+        Zig.Pivot bigLow  = zigZag.pivots.get(b)
+        Zig.Pivot bigHigh = zigZag.pivots.get(b - 1)
+
+        float bigMove = bigLow.end.price - bigHigh.end.price
+
+        // 下降8.5波だけ
+        if bigMove < 0
+
+            int startTime = int(bigHigh.end.time)
+            int endTime   = int(bigLow.end.time)
+
+            // 古い→新しい
+            int s = 1
+
+            while s < smallCountDown - 1
+
+                Zig.Pivot prevPivot = smallZigZag.pivots.get(s - 1)
+                Zig.Pivot highPivot = smallZigZag.pivots.get(s)
+                Zig.Pivot nextPivot = smallZigZag.pivots.get(s + 1)
+
+                // 3点とも8.5波の中
+                if prevPivot.end.time >= startTime and nextPivot.end.time <= endTime
+
+                    // 安値→高値→安値
+                    if prevPivot.end.price < highPivot.end.price and nextPivot.end.price < highPivot.end.price
+
+                        // 戻り率
+                        float reboundPercent =
+                             (highPivot.end.price - prevPivot.end.price) /
+                             prevPivot.end.price * 100
+
+                        sumRebound += reboundPercent
+
+                        // 利益率（戻り高値→次の安値）
+                        float profitPercent =
+                             (highPivot.end.price - nextPivot.end.price) /
+                             highPivot.end.price * 100
+
+                        sumReboundProfit += profitPercent
+
+                        countRebound += 1
+
+                s += 1
+
+            waveCount += 1
+
+        b -= 1
+
+    if countRebound > 0
+        avgReboundPercent := sumRebound / countRebound
+        avgReboundProfit  := sumReboundProfit / countRebound
+//ここまでが押しと戻り
+
+
+
+
+
+
+
+int pivotCount = zigZag.pivots.size()//pivotCountはピボットの個数
+float avgPlus = na//表に表示させるプラスの平均、naは初期値として “値が存在しない（na）” 状態にしている
+float avgMinus = na//表に表示させるマイナスの平均
+
+// --- プラス平均（％） ---
+if pivotCount >= 2
+    float sumPercentPlus = 0.0
+    int countPlus = 0
+    int idx = pivotCount - 1
+
+    while idx > 0 and countPlus < lookbackPlus
+        Zig.Pivot p1 = zigZag.pivots.get(idx)
+        Zig.Pivot p2 = zigZag.pivots.get(idx - 1)
+
+        float diff = p1.end.price - p2.end.price
+
+        if diff > 0
+            float pct = diff / p2.end.price * 100
+            sumPercentPlus += pct
+            countPlus += 1
+
+        idx -= 1
+
+    if countPlus > 0
+        avgPlus := sumPercentPlus / countPlus
+
+
+// --- マイナス平均（％） ---
+if pivotCount >= 2
+    float sumPercentMinus = 0.0
+    int countMinus = 0
+    int idx2 = pivotCount - 1
+
+    while idx2 > 0 and countMinus < lookbackMinus
+        Zig.Pivot p1 = zigZag.pivots.get(idx2)
+        Zig.Pivot p2 = zigZag.pivots.get(idx2 - 1)
+
+        float diff = p1.end.price - p2.end.price
+
+        if diff < 0
+            float pct = math.abs(diff) / p2.end.price * 100
+            sumPercentMinus += pct
+            countMinus += 1
+
+        idx2 -= 1
+
+    if countMinus > 0
+        avgMinus := sumPercentMinus / countMinus
+
+// --- 現在価格に対する比率（％） ---
+float percentPlus = na//
+float percentMinus = na
+if not na(avgPlus)//avgPlus が na のままなら割り算しない/エラー防止
+    percentPlus := (avgPlus / close) * 100
+if not na(avgMinus)
+    percentMinus := (avgMinus / close) * 100
+
+
+
+// --- トレンド継続判定 ---
+color bgColor = color.new(color.yellow, 85)
+
+var int trendState = 0
+// 1 = 上昇トレンド
+// -1 = 下降トレンド
+// 0 = レンジ
+
+if pivotCount >= 4
+
+    float lastHigh = na
+    float prevHigh = na
+    float lastLow = na
+    float prevLow = na
+
+    int foundHigh = 0
+    int foundLow = 0
+
+    int i = pivotCount - 1
+
+    while i >= 0 and (foundHigh < 2 or foundLow < 2)
+        Zig.Pivot p = zigZag.pivots.get(i)
+
+        if p.isHigh and foundHigh < 2
+            if foundHigh == 0
+                lastHigh := p.end.price
+            else
+                prevHigh := p.end.price
+            foundHigh += 1
+
+        if not p.isHigh and foundLow < 2
+            if foundLow == 0
+                lastLow := p.end.price
+            else
+                prevLow := p.end.price
+            foundLow += 1
+
+        i -= 1
+
+    if not na(lastHigh) and not na(prevHigh) and not na(lastLow) and not na(prevLow)
+
+        // 上昇トレンド
+        if lastHigh > prevHigh and lastLow > prevLow
+            trendState := 1
+
+        // 下降トレンド
+        else if lastHigh < prevHigh and lastLow < prevLow
+            trendState := -1
+
+        // それ以外
+        else
+            trendState := 0
+
+
+
+
+
+
+
+// --- 表に表示 ---
+// 上昇内押し目
+table.cell(
+     topRightTable,
+     0,
+     0,
+     "上昇内押し目",
+     text_color=color.white,
+     bgcolor=color.new(color.orange,70),
+     text_size=size.small)
+
+table.cell(
+     topRightTable,
+     1,
+     0,
+     na(avgPullbackPercent)
+         ? "N/A"
+         : "-" + str.tostring(avgPullbackPercent,"#.##") + "%",
+     text_color=color.white,
+     bgcolor=color.new(color.orange,70),
+     text_size=size.small)
+
+table.cell(
+     topRightTable,
+     2,
+     0,
+     na(avgPullbackProfit)
+         ? "N/A"
+         : "+" + str.tostring(avgPullbackProfit,"#.##") + "%",
+     text_color=color.white,
+     bgcolor=color.new(color.orange,70),
+     text_size=size.small)
+
+
+// 下降内戻り
+table.cell(
+     topRightTable,
+     0,
+     1,
+     "下降内戻り",
+     text_color=color.white,
+     bgcolor=color.new(color.blue,70),
+     text_size=size.small)
+
+table.cell(
+     topRightTable,
+     1,
+     1,
+     na(avgReboundPercent)
+         ? "N/A"
+         : "+" + str.tostring(avgReboundPercent,"#.##") + "%",
+     text_color=color.white,
+     bgcolor=color.new(color.blue,70),
+     text_size=size.small)
+
+table.cell(
+     topRightTable,
+     2,
+     1,
+     na(avgReboundProfit)
+         ? "N/A"
+         : "+" + str.tostring(avgReboundProfit,"#.##") + "%",
+     text_color=color.white,
+     bgcolor=color.new(color.blue,70),
+     text_size=size.small)
