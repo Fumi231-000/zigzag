@@ -1,0 +1,244 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © njs05
+
+//@version=6
+indicator("ジグザグ8/1ラインと水平線①", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ライブラリのインポート
+import njs05/ZigZag/1 as Zig
+
+// --- ZigZag 設定 ---
+float deviationInput = input.float(8.5, 'Deviation (%)', minval=0.00001, maxval=100.0)
+int depthInput = input.int(1, 'Depth', minval=1)
+color lineColorInput = input.color(#2962FF, 'Line Color')
+bool extendInput = input.bool(true, 'Extend Last Pivot')
+string priceDiffInput = input.string('Percent', '', options=['Absolute','Percent'])
+
+var Zig.Settings settings = Zig.Settings.new(
+    deviationInput,
+    depthInput,
+    lineColorInput,
+    extendInput,
+    false,
+    false,
+    false,
+    "Percent")
+var Zig.ZigZag zigZag = Zig.newInstance(settings)
+
+
+
+
+
+//tuika
+// 最新の押し目
+float lastPullbackPrice = na
+int   lastPullbackTime  = na
+
+// 最新の戻り高値
+float lastReboundPrice = na
+int   lastReboundTime  = na
+// ================================
+// 小さい波用 ZigZag (Deviation
+// ================================
+
+int bigWaveLookback = input.int(
+     1,
+     "8.5波の参照数",
+     minval=1,
+     maxval=100)
+
+int pullbackLineLength = input.int(
+     150,
+     "押し目ライン長さ（バー）",
+     minval = 1)
+
+
+float smallDeviationInput = input.float(
+     3.5,
+     "Small ZigZag Deviation (%)",
+     minval=0.00001,
+     maxval=100)
+
+
+var Zig.Settings smallSettings =
+     Zig.Settings.new(
+          smallDeviationInput,
+          depthInput,
+          color.orange,
+          extendInput,
+          false,
+          false,
+          false,
+          priceDiffInput)
+
+
+var Zig.ZigZag smallZigZag =
+     Zig.newInstance(smallSettings)
+
+
+
+
+
+// --- ZigZag 更新 ---
+zigZag.update()
+smallZigZag.update()
+
+
+//=========================================
+// 押し目終点ライン（完全独立版）
+//=========================================
+
+// ライン保存用
+var array<line> pullbackLines = array.new_line()
+
+// 毎バー古いラインを削除
+if array.size(pullbackLines) > 0
+
+    for i = array.size(pullbackLines) - 1 to 0
+
+        line.delete(array.get(pullbackLines, i))
+
+    array.clear(pullbackLines)
+
+
+//-----------------------------------------
+// 上昇8.5波の最後の押し安値へライン
+//-----------------------------------------
+
+int bigCountPB = zigZag.pivots.size()
+int smallCountPB = smallZigZag.pivots.size()
+
+if bigCountPB >= 2 and smallCountPB >= 3
+
+    int waveCounter = 0
+    int b = bigCountPB - 1
+
+    while b > 0 and waveCounter < bigWaveLookback
+
+        Zig.Pivot bigHigh = zigZag.pivots.get(b)
+        Zig.Pivot bigLow  = zigZag.pivots.get(b - 1)
+
+        float move = bigHigh.end.price - bigLow.end.price
+
+        // 上昇8.5波のみ
+        if move > 0
+
+            int startTime = int(bigLow.end.time)
+            int endTime   = int(bigHigh.end.time)
+
+            float lastLowPrice = na
+            int   lastLowTime  = na
+
+            int s = 1
+
+            while s < smallCountPB - 1
+
+                Zig.Pivot prevPivot = smallZigZag.pivots.get(s - 1)
+                Zig.Pivot lowPivot  = smallZigZag.pivots.get(s)
+                Zig.Pivot nextPivot = smallZigZag.pivots.get(s + 1)
+
+                if prevPivot.end.time >= startTime and nextPivot.end.time <= endTime
+
+                    // 高値→安値→高値
+                    if prevPivot.end.price > lowPivot.end.price and nextPivot.end.price > lowPivot.end.price
+
+                        // 常に上書きするので最後の押し安値になる
+                        lastLowPrice := lowPivot.end.price
+                        lastLowTime  := int(lowPivot.end.time)
+
+                s += 1
+
+            // ライン作成
+            if not na(lastLowPrice)
+
+                int endTime = lastLowTime + pullbackLineLength * timeframe.in_seconds() * 1000
+
+                line newLine = line.new(
+                     x1 = lastLowTime,
+                     y1 = lastLowPrice,
+                     x2 = endTime,
+                     y2 = lastLowPrice,
+                     xloc = xloc.bar_time,
+                     extend = extend.none,
+                     color = color.yellow,
+                     width = 2)
+
+                array.push(pullbackLines, newLine)
+
+            waveCounter += 1
+
+        b -= 1
+
+//=========================================
+// 戻り高値終点ライン（完全独立版）
+//=========================================
+
+var array<line> reboundLines = array.new_line()
+
+if array.size(reboundLines) > 0
+    for i = array.size(reboundLines) - 1 to 0
+        line.delete(array.get(reboundLines, i))
+    array.clear(reboundLines)
+
+int bigCountRB = zigZag.pivots.size()
+int smallCountRB = smallZigZag.pivots.size()
+
+if bigCountRB >= 2 and smallCountRB >= 3
+
+    int waveCounter = 0
+    int b = bigCountRB - 1
+
+    while b > 0 and waveCounter < bigWaveLookback
+
+        Zig.Pivot bigLow  = zigZag.pivots.get(b)
+        Zig.Pivot bigHigh = zigZag.pivots.get(b - 1)
+
+        float move = bigLow.end.price - bigHigh.end.price
+
+        // 下降8.5波のみ
+        if move < 0
+
+            int startTime = int(bigHigh.end.time)
+            int endTime   = int(bigLow.end.time)
+
+            float lastHighPrice = na
+            int   lastHighTime  = na
+
+            int s = 1
+
+            while s < smallCountRB - 1
+
+                Zig.Pivot prevPivot = smallZigZag.pivots.get(s - 1)
+                Zig.Pivot highPivot = smallZigZag.pivots.get(s)
+                Zig.Pivot nextPivot = smallZigZag.pivots.get(s + 1)
+
+                if prevPivot.end.time >= startTime and nextPivot.end.time <= endTime
+
+                    // 安値→高値→安値
+                    if prevPivot.end.price < highPivot.end.price and nextPivot.end.price < highPivot.end.price
+
+                        // 常に最後の戻り高値を保持
+                        lastHighPrice := highPivot.end.price
+                        lastHighTime  := int(highPivot.end.time)
+
+                s += 1
+
+            if not na(lastHighPrice)
+
+                int lineEndTime = lastHighTime + pullbackLineLength * timeframe.in_seconds() * 1000
+
+                line newLine = line.new(
+                     x1 = lastHighTime,
+                     y1 = lastHighPrice,
+                     x2 = lineEndTime,
+                     y2 = lastHighPrice,
+                     xloc = xloc.bar_time,
+                     extend = extend.none,
+                     color = color.aqua,
+                     width = 2)
+
+                array.push(reboundLines, newLine)
+
+            waveCounter += 1
+
+        b -= 1
