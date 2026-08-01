@@ -2,7 +2,7 @@
 // © njs05
 
 //@version=6
-indicator("ジグザグ押し戻り利益のみ", overlay=true, max_lines_count=500, max_labels_count=500)
+indicator("ジグザグ押し戻り利益のみ③", overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ライブラリのインポート
 import njs05/ZigZag/1 as Zig
@@ -73,7 +73,9 @@ smallZigZag.update()
 showPullbackProfitLabel = input.bool(
      true,
      "押し目利益ラベル表示")
-
+color pullProfitLabelColor = input.color(
+     color.green,
+     "押し目利益ラベル色")
 
 // 重複防止
 var int lastPullProfitLabelTime = na
@@ -156,7 +158,7 @@ if showPullbackProfitLabel and profitBigCount >= 2 and profitSmallCount >= 3
                                          "#.##") +
                                      "%",
                                  style=label.style_label_down,
-                                 color=color.green,
+                                 color=pullProfitLabelColor,
                                  textcolor=color.white,
                                  size=size.small
                             )
@@ -180,7 +182,9 @@ if showPullbackProfitLabel and profitBigCount >= 2 and profitSmallCount >= 3
 showReboundProfitLabel = input.bool(
      true,
      "戻り利益ラベル表示")
-
+color reboundProfitLabelColor = input.color(
+     color.red,
+     "戻り利益ラベル色")
 
 // 重複防止
 var int lastReboundProfitLabelTime = na
@@ -281,7 +285,7 @@ if showReboundProfitLabel and reboundProfitBigCount >= 2 and reboundProfitSmallC
                                          "#.##") +
                                      "%",
                                  style=label.style_label_up,
-                                 color=color.red,
+                                 color=reboundProfitLabelColor,
                                  textcolor=color.white,
                                  size=size.small
                             )
