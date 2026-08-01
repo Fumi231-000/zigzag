@@ -1,0 +1,157 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © njs05
+
+//@version=6
+indicator("ジグザグ8/1ラベルのみ表示②", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ライブラリのインポート
+import njs05/ZigZag/1 as Zig
+
+// --- ZigZag 設定 ---
+float deviationInput = input.float(8.5, 'Deviation (%)', minval=0.00001, maxval=100.0)
+int depthInput = input.int(1, 'Depth', minval=1)
+color lineColorInput = input.color(#2962FF, 'Line Color')
+bool extendInput = input.bool(true, 'Extend Last Pivot')
+string priceDiffInput = input.string('Percent', '', options=['Absolute','Percent'])
+
+var Zig.Settings settings = Zig.Settings.new(
+    deviationInput,
+    depthInput,
+    lineColorInput,
+    extendInput,
+    false,
+    false,
+    false,
+    "Percent")
+var Zig.ZigZag zigZag = Zig.newInstance(settings)
+
+
+// ================================
+// 小さい波用 ZigZag (Deviation
+// ================================
+
+int bigWaveLookback = input.int(
+     1,
+     "8.5波の参照数",
+     minval=1,
+     maxval=100)
+
+
+
+float smallDeviationInput = input.float(
+     3.5,
+     "Small ZigZag Deviation (%)",
+     minval=0.00001,
+     maxval=100)
+color smallLineColorInput = input.color(
+     color.orange,
+     "Small ZigZag Line Color")
+
+var Zig.Settings smallSettings =
+     Zig.Settings.new(
+          smallDeviationInput,
+          depthInput,
+          smallLineColorInput,
+          extendInput,
+          false,
+          false,
+          false,
+          priceDiffInput)
+
+
+var Zig.ZigZag smallZigZag =
+     Zig.newInstance(smallSettings)
+
+
+
+
+
+int lookbackPlus = input.int(20, "Number of positive differences for average", minval=1)//プラスのピボットの個数
+int lookbackMinus = input.int(20, "Number of negative differences for average", minval=1)//マイナスのピボットの個数
+//int lookbackPivotInput = input.int(20, "Number of pivots for average time", minval = 2)//平均時間
+
+// --- ZigZag 更新 ---
+zigZag.update()
+smallZigZag.update()
+
+
+// ================================
+// ■ ZigZag HH / HL / LH / LL 完全版（UI干渉対策込み）
+// ================================
+
+var float lastHighPivot = na
+var float lastLowPivot  = na
+var int   lastProcessedTime = na
+
+// 視覚調整（これで％テーブルと被らない）
+//ハイローとピボットを同じオフセットに入れたから干渉せず表示できる
+float offset = 0
+
+//hennkou
+if smallZigZag.pivots.size() > 2
+//henkou
+    int idx = smallZigZag.pivots.size() - 2
+    //henkou
+    Zig.Pivot p = smallZigZag.pivots.get(idx)
+
+    int t = int(p.end.time)
+
+    // 1回だけ処理（重複防止）
+    if na(lastProcessedTime) or t != lastProcessedTime
+
+        // =========================
+        // ■ HIGH PIVOT
+        // =========================
+        if p.isHigh
+
+            string txt = "H"
+
+            if not na(lastHighPivot)
+                txt := p.end.price > lastHighPivot ? "HH" : "LH"
+
+            color bg = p.end.price > nz(lastHighPivot, p.end.price) ? color.green : color.red
+
+            label.new(
+                x=t,
+                y=p.end.price + offset,   // ★上にずらす
+                text=txt,
+                xloc=xloc.bar_time,
+                style=label.style_label_down,
+                textcolor=color.white,
+                color=bg,
+                size=size.small
+            )
+
+            lastHighPivot := p.end.price
+
+        // =========================
+        // ■ LOW PIVOT
+        // =========================
+        else
+
+            string txt = "L"
+
+            if not na(lastLowPivot)
+                txt := p.end.price < lastLowPivot ? "LL" : "HL"
+
+            // HL=緑 / LL=赤 / 初回=グレー
+            color bg = na(lastLowPivot) ? color.gray :
+                       p.end.price < lastLowPivot ? color.red : color.green
+
+            label.new(
+                x=t,
+                y=p.end.price - offset,   // ★下にずらす
+                text=txt,
+                xloc=xloc.bar_time,
+                style=label.style_label_up,
+                textcolor=color.white,
+                color=bg,
+                size=size.small
+            )
+
+            lastLowPivot := p.end.price
+
+        // 更新（重複防止）
+        lastProcessedTime := t
+
+
