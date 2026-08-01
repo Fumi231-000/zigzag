@@ -1,0 +1,648 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © njs05
+
+//@version=6
+indicator("ジグザグ押し目と戻り表示", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ライブラリのインポート
+import njs05/ZigZag/1 as Zig
+
+// --- ZigZag 設定 ---
+float deviationInput = input.float(8.5, 'Deviation (%)', minval=0.00001, maxval=100.0)
+int depthInput = input.int(1, 'Depth', minval=1)
+color lineColorInput = input.color(#2962FF, 'Line Color')
+bool extendInput = input.bool(true, 'Extend Last Pivot')
+string priceDiffInput = input.string('Percent', '', options=['Absolute','Percent'])
+
+var Zig.Settings settings = Zig.Settings.new(
+    deviationInput,
+    depthInput,
+    lineColorInput,
+    extendInput,
+    false,
+    false,
+    false,
+    "Percent")
+var Zig.ZigZag zigZag = Zig.newInstance(settings)
+
+
+
+
+// ================================
+// 小さい波用 ZigZag (Deviation
+// ================================
+
+int bigWaveLookback = input.int(
+     1,
+     "8.5波の参照数",
+     minval=1,
+     maxval=100)
+
+float smallDeviationInput = input.float(
+     3.5,
+     "Small ZigZag Deviation (%)",
+     minval=0.00001,
+     maxval=100)
+
+
+var Zig.Settings smallSettings =
+     Zig.Settings.new(
+          smallDeviationInput,
+          depthInput,
+          color.orange,
+          extendInput,
+          false,
+          false,
+          false,
+          priceDiffInput)
+
+
+var Zig.ZigZag smallZigZag =
+     Zig.newInstance(smallSettings)
+
+// --- ZigZag 更新 ---
+zigZag.update()
+smallZigZag.update()
+
+
+
+
+
+//変数
+//=========================================
+// 上昇8.5波内の押し率・利益率
+//=========================================
+
+float avgPullbackPercent = na
+float avgPullbackProfit  = na
+
+// 押し目ラベル重複防止
+var int lastPullbackLabelTime = na
+
+// 最新押し目の表示用
+float lastPullbackPercent = na
+float lastPullbackProfit = na
+
+int bigCount   = zigZag.pivots.size()
+int smallCount = smallZigZag.pivots.size()
+
+if bigCount >= 2 and smallCount >= 3
+
+    float sumPullback       = 0.0
+    float sumPullbackProfit = 0.0
+    int   countPullback     = 0
+
+    int waveCount = 0
+    int b = bigCount - 1
+
+    while b > 0 and waveCount < bigWaveLookback
+
+        Zig.Pivot bigHigh = zigZag.pivots.get(b)
+        Zig.Pivot bigLow  = zigZag.pivots.get(b - 1)
+
+        float bigMove = bigHigh.end.price - bigLow.end.price
+
+        // 上昇8.5波だけ
+        if bigMove > 0
+
+            int startTime = int(bigLow.end.time)
+            int endTime   = int(bigHigh.end.time)
+            
+            //tuika
+//          この8.5波の最後の押し目
+            float waveLastPullbackPrice = na
+            int   waveLastPullbackTime  = na
+
+            // 古い→新しいで走査
+            int s = 1
+
+            while s < smallCount - 1
+
+                Zig.Pivot prevPivot = smallZigZag.pivots.get(s - 1)
+                Zig.Pivot lowPivot  = smallZigZag.pivots.get(s)
+                Zig.Pivot nextPivot = smallZigZag.pivots.get(s + 1)
+
+                // 3点とも8.5波の中
+                if prevPivot.end.time >= startTime and nextPivot.end.time <= endTime
+
+                    // 高値→安値→高値
+                    if prevPivot.end.price > lowPivot.end.price and nextPivot.end.price > lowPivot.end.price
+
+
+                        //=========================
+                        // 押し目ラベル表示
+                        //=========================
+
+                        int pullTime = int(lowPivot.end.time)
+
+
+                        if na(lastPullbackLabelTime) or pullTime != lastPullbackLabelTime
+
+                            float pullPercent =
+                                 (prevPivot.end.price - lowPivot.end.price) /
+                                 prevPivot.end.price * 100
+
+
+                            label.new(
+                                 x=pullTime,
+                                 y=lowPivot.end.price,
+                                 xloc=xloc.bar_time,
+                                 text=
+                                     "押し目\n-" +
+                                     str.tostring(pullPercent,"#.##") +
+                                     "%",
+                                 style=label.style_label_up,
+                                 color=color.orange,
+                                 textcolor=color.white,
+                                 size=size.small
+                            )
+
+
+                            lastPullbackLabelTime := pullTime
+
+
+
+                        // 押し率
+                        float pullbackPercent =
+                             (prevPivot.end.price - lowPivot.end.price) /
+                             prevPivot.end.price * 100
+
+
+                        sumPullback += pullbackPercent
+
+
+                        // 利益率（押し安値→次の高値）
+                        float profitPercent =
+                             (nextPivot.end.price - lowPivot.end.price) /
+                             lowPivot.end.price * 100
+
+
+                        sumPullbackProfit += profitPercent
+
+                        countPullback += 1
+
+                        lastPullbackPercent := pullbackPercent
+                        lastPullbackProfit  := profitPercent
+                      
+                s += 1
+
+            waveCount += 1
+
+        b -= 1
+
+    if countPullback > 0
+        avgPullbackPercent := sumPullback / countPullback
+        avgPullbackProfit  := sumPullbackProfit / countPullback
+
+
+
+
+//=========================================
+// 下降8.5波内の戻り率・利益率
+//=========================================
+
+float avgReboundPercent = na
+float avgReboundProfit  = na
+
+// 戻りラベル重複防止
+var int lastReboundLabelTime = na
+
+int bigCountDown   = zigZag.pivots.size()
+int smallCountDown = smallZigZag.pivots.size()
+
+if bigCountDown >= 2 and smallCountDown >= 3
+
+    float sumRebound       = 0.0
+    float sumReboundProfit = 0.0
+    int   countRebound     = 0
+
+    int waveCount = 0
+    int b = bigCountDown - 1
+
+    while b > 0 and waveCount < bigWaveLookback
+
+        Zig.Pivot bigLow  = zigZag.pivots.get(b)
+        Zig.Pivot bigHigh = zigZag.pivots.get(b - 1)
+
+        float bigMove = bigLow.end.price - bigHigh.end.price
+
+        // 下降8.5波だけ
+        if bigMove < 0
+
+            int startTime = int(bigHigh.end.time)
+            int endTime   = int(bigLow.end.time)
+
+            // 古い→新しい
+            int s = 1
+
+            while s < smallCountDown - 1
+
+                Zig.Pivot prevPivot = smallZigZag.pivots.get(s - 1)
+                Zig.Pivot highPivot = smallZigZag.pivots.get(s)
+                Zig.Pivot nextPivot = smallZigZag.pivots.get(s + 1)
+
+                // 3点とも8.5波の中
+                if prevPivot.end.time >= startTime and nextPivot.end.time <= endTime
+
+                    // 安値→高値→安値
+                    if prevPivot.end.price < highPivot.end.price and nextPivot.end.price < highPivot.end.price
+
+                        //=========================
+                        // 戻り高値ラベル表示
+                        //=========================
+
+                        int reboundTime = int(highPivot.end.time)
+
+
+                        if na(lastReboundLabelTime) or reboundTime != lastReboundLabelTime
+
+
+                            float reboundPercentLabel =
+                                 (highPivot.end.price - prevPivot.end.price) /
+                                 prevPivot.end.price * 100
+
+
+                            label.new(
+                                 x=reboundTime,
+                                 y=highPivot.end.price,
+                                 xloc=xloc.bar_time,
+                                 text=
+                                     "戻り\n+" +
+                                     str.tostring(reboundPercentLabel,"#.##") +
+                                     "%",
+                                 style=label.style_label_down,
+                                 color=color.blue,
+                                 textcolor=color.white,
+                                 size=size.small
+                            )
+
+
+                            lastReboundLabelTime := reboundTime
+
+
+
+                        // 戻り率
+                        float reboundPercent =
+                             (highPivot.end.price - prevPivot.end.price) /
+                             prevPivot.end.price * 100
+
+
+                        sumRebound += reboundPercent
+
+
+                        // 利益率（戻り高値→次の安値）
+                        float profitPercent =
+                             (highPivot.end.price - nextPivot.end.price) /
+                             highPivot.end.price * 100
+
+
+                        sumReboundProfit += profitPercent
+
+                        countRebound += 1
+
+                s += 1
+
+            waveCount += 1
+
+        b -= 1
+
+    if countRebound > 0
+        avgReboundPercent := sumRebound / countRebound
+        avgReboundProfit  := sumReboundProfit / countRebound
+//ここまでが押しと戻り
+
+
+
+//=========================================
+// 押し目後 利益率ラベル表示
+//=========================================
+
+// 表示切替
+showPullbackProfitLabel = input.bool(
+     true,
+     "押し目利益ラベル表示")
+
+
+// 重複防止
+var int lastPullProfitLabelTime = na
+
+
+int profitBigCount = zigZag.pivots.size()
+int profitSmallCount = smallZigZag.pivots.size()
+
+
+if showPullbackProfitLabel and profitBigCount >= 2 and profitSmallCount >= 3
+
+    int b2 = profitBigCount - 1
+
+    while b2 > 0
+
+        Zig.Pivot bigHigh2 = zigZag.pivots.get(b2)
+        Zig.Pivot bigLow2  = zigZag.pivots.get(b2 - 1)
+
+
+        float bigMove2 =
+             bigHigh2.end.price - bigLow2.end.price
+
+
+        // 上昇8.5波のみ
+        if bigMove2 > 0
+
+            int startTime2 = int(bigLow2.end.time)
+            int endTime2   = int(bigHigh2.end.time)
+
+
+            int s2 = 1
+
+            while s2 < profitSmallCount - 1
+
+
+                Zig.Pivot prev2 =
+                     smallZigZag.pivots.get(s2 - 1)
+
+                Zig.Pivot low2 =
+                     smallZigZag.pivots.get(s2)
+
+                Zig.Pivot next2 =
+                     smallZigZag.pivots.get(s2 + 1)
+
+
+
+                // 押し目条件
+                if prev2.end.time >= startTime2 and
+                   next2.end.time <= endTime2
+
+
+                    if prev2.end.price > low2.end.price and
+                       next2.end.price > low2.end.price
+
+
+
+                        int profitTime =
+                             int(next2.end.time)
+
+
+                        if na(lastPullProfitLabelTime) or
+                           profitTime != lastPullProfitLabelTime
+
+
+                            float profitPercentLabel =
+                                 (next2.end.price - low2.end.price) /
+                                 low2.end.price * 100
+
+
+
+                            label.new(
+                                 x=profitTime,
+                                 y=next2.end.price,
+                                 xloc=xloc.bar_time,
+                                 text=
+                                     "利益\n+" +
+                                     str.tostring(
+                                         profitPercentLabel,
+                                         "#.##") +
+                                     "%",
+                                 style=label.style_label_down,
+                                 color=color.green,
+                                 textcolor=color.white,
+                                 size=size.small
+                            )
+
+
+                            lastPullProfitLabelTime := profitTime
+
+
+
+                s2 += 1
+
+
+        b2 -= 1
+
+//=========================================
+// 戻り高値後 利益率ラベル表示
+//=========================================
+
+// 表示切替
+showReboundProfitLabel = input.bool(
+     true,
+     "戻り利益ラベル表示")
+
+
+// 重複防止
+var int lastReboundProfitLabelTime = na
+
+
+int reboundProfitBigCount = zigZag.pivots.size()
+int reboundProfitSmallCount = smallZigZag.pivots.size()
+
+
+if showReboundProfitLabel and reboundProfitBigCount >= 2 and reboundProfitSmallCount >= 3
+
+
+    int b3 = reboundProfitBigCount - 1
+
+
+    while b3 > 0
+
+
+        Zig.Pivot bigLow3 =
+             zigZag.pivots.get(b3)
+
+        Zig.Pivot bigHigh3 =
+             zigZag.pivots.get(b3 - 1)
+
+
+
+        float bigMove3 =
+             bigLow3.end.price - bigHigh3.end.price
+
+
+
+        // 下降8.5波のみ
+        if bigMove3 < 0
+
+
+            int startTime3 =
+                 int(bigHigh3.end.time)
+
+            int endTime3 =
+                 int(bigLow3.end.time)
+
+
+
+            int s3 = 1
+
+
+            while s3 < reboundProfitSmallCount - 1
+
+
+
+                Zig.Pivot prev3 =
+                     smallZigZag.pivots.get(s3 - 1)
+
+                Zig.Pivot high3 =
+                     smallZigZag.pivots.get(s3)
+
+                Zig.Pivot next3 =
+                     smallZigZag.pivots.get(s3 + 1)
+
+
+
+                // 戻り条件
+                if prev3.end.time >= startTime3 and
+                   next3.end.time <= endTime3
+
+
+
+                    // 安値→高値→安値
+                    if prev3.end.price < high3.end.price and
+                       next3.end.price < high3.end.price
+
+
+
+                        int reboundProfitTime =
+                             int(next3.end.time)
+
+
+
+                        if na(lastReboundProfitLabelTime) or
+                           reboundProfitTime != lastReboundProfitLabelTime
+
+
+
+                            float reboundProfitPercent =
+                                 (high3.end.price - next3.end.price) /
+                                 high3.end.price * 100
+
+
+
+                            label.new(
+                                 x=reboundProfitTime,
+                                 y=next3.end.price,
+                                 xloc=xloc.bar_time,
+                                 text=
+                                     "利益\n-" +
+                                     str.tostring(
+                                         reboundProfitPercent,
+                                         "#.##") +
+                                     "%",
+                                 style=label.style_label_up,
+                                 color=color.red,
+                                 textcolor=color.white,
+                                 size=size.small
+                            )
+
+
+
+                            lastReboundProfitLabelTime :=
+                                 reboundProfitTime
+
+
+
+                s3 += 1
+
+
+        b3 -= 1
+
+// ================================
+// ■ ZigZag HH / HL / LH / LL 完全版（UI干渉対策込み）
+// ================================
+
+var float lastHighPivot = na
+var float lastLowPivot  = na
+var int   lastProcessedTime = na
+
+// 視覚調整（これで％テーブルと被らない）
+//ハイローとピボットを同じオフセットに入れたから干渉せず表示できる
+float offset = 0
+
+//hennkou
+if smallZigZag.pivots.size() > 2
+//henkou
+    int idx = smallZigZag.pivots.size() - 2
+
+    //henkou
+    Zig.Pivot p = smallZigZag.pivots.get(idx)
+
+    int t = int(p.end.time)
+    // 前回ピボットからの変化率
+    float pivotPercent = na
+
+    if idx > 0
+        Zig.Pivot prev = smallZigZag.pivots.get(idx - 1)
+
+        pivotPercent :=
+             (p.end.price - prev.end.price) /
+             prev.end.price * 100
+    // 1回だけ処理（重複防止）
+    if na(lastProcessedTime) or t != lastProcessedTime
+
+        // =========================
+        // ■ HIGH PIVOT
+        // =========================
+        if p.isHigh
+
+            string txt = "H"
+
+            if not na(lastHighPivot)
+                txt := p.end.price > lastHighPivot ? "HH" : "LH"
+
+            color bg = p.end.price > nz(lastHighPivot, p.end.price) ? color.green : color.red
+
+
+
+            label.new(
+                x=t,
+                y=p.end.price + offset,
+                 text =
+                        txt +
+                        (na(pivotPercent) ? "" :
+                        "\n" +
+                        (pivotPercent > 0 ? "+" : "") +
+                        str.tostring(pivotPercent, "#.##") +
+                        "%"),
+                xloc=xloc.bar_time,
+                style=label.style_label_down,
+                textcolor=color.white,
+                color=bg,
+                size=size.small
+            )
+
+            lastHighPivot := p.end.price
+
+        // =========================
+        // ■ LOW PIVOT
+        // =========================
+        else
+
+            string txt = "L"
+
+            if not na(lastLowPivot)
+                txt := p.end.price < lastLowPivot ? "LL" : "HL"
+
+            // HL=緑 / LL=赤 / 初回=グレー
+            color bg = na(lastLowPivot) ? color.gray :
+                       p.end.price < lastLowPivot ? color.red : color.green
+
+            label.new(
+                    x=t,
+                    y=p.end.price - offset,
+                    text =
+                        txt +
+                        (na(pivotPercent) ? "" :
+                        "\n" +
+                        (pivotPercent > 0 ? "+" : "") +
+                        str.tostring(pivotPercent, "#.##") +
+                        "%"),
+                xloc=xloc.bar_time,
+                style=label.style_label_up,
+                textcolor=color.white,
+                color=bg,
+                size=size.small
+            )
+
+            lastLowPivot := p.end.price
+
+        // 更新（重複防止）
+        lastProcessedTime := t
+
