@@ -16,7 +16,6 @@ string priceDiffInput = input.string('Percent', '', options=['Absolute','Percent
 
 
 
-
 var Zig.Settings settings = Zig.Settings.new(
     deviationInput,
     depthInput,
@@ -28,18 +27,36 @@ var Zig.Settings settings = Zig.Settings.new(
     "Percent")
 var Zig.ZigZag zigZag = Zig.newInstance(settings)
 
-// ================================
-// ラベル色設定
-// ================================
 
-color pullbackLabelColor = input.color(
+//=========================
+// ラベル設定
+//=========================
+
+string labelSizeInput = input.string(
+     "Small",
+     "文字サイズ",
+     options=["Tiny","Small","Normal","Large","Huge"])
+
+float labelOffset = input.float(
+     0.8,
+     "ラベル位置倍率",
+     step=0.1)
+
+color pullbackTextColor = input.color(
      color.orange,
-     "押し目ラベル色")
+     "押し目文字色")
 
-color reboundLabelColor = input.color(
-     color.blue,
-     "戻りラベル色")
+color reboundTextColor = input.color(
+     color.aqua,
+     "戻り文字色")
 
+f_getLabelSize() =>
+    switch labelSizeInput
+        "Tiny"   => size.tiny
+        "Small"  => size.small
+        "Normal" => size.normal
+        "Large"  => size.large
+        => size.huge
 
 // ================================
 // 小さい波用 ZigZag (Deviation
@@ -147,17 +164,14 @@ if bigCount >= 2 and smallCount >= 3
 
 
                             label.new(
-                                 x=pullTime,
-                                 y=lowPivot.end.price,
-                                 xloc=xloc.bar_time,
-                                 text=
-                                     "押し目\n-" +
-                                     str.tostring(pullPercent,"#.##") +
-                                     "%",
-                                 style=label.style_label_up,
-                                 color=pullbackLabelColor,
-                                 textcolor=color.white,
-                                 size=size.small
+                                x=pullTime,
+                                y=lowPivot.end.price * (1 - labelOffset / 100),
+                                xloc=xloc.bar_time,
+                                text="-" + str.tostring(pullPercent, "#.##") + "%",
+                                textcolor=pullbackTextColor,
+                                style=label.style_none,
+                                color=color.new(color.white, 100),
+                                size = f_getLabelSize()
                             )
 
 
@@ -231,17 +245,14 @@ if bigCount >= 2 and smallCount >= 3
 
 
                             label.new(
-                                 x=reboundTime,
-                                 y=highPivot.end.price,
-                                 xloc=xloc.bar_time,
-                                 text=
-                                     "戻り\n+" +
-                                     str.tostring(reboundPercentLabel,"#.##") +
-                                     "%",
-                                 style=label.style_label_down,
-                                 color=reboundLabelColor,
-                                 textcolor=color.white,
-                                 size=size.small
+                                x=reboundTime,
+                                y=highPivot.end.price * (1 + labelOffset / 100),
+                                xloc=xloc.bar_time,
+                                text="+" + str.tostring(reboundPercentLabel, "#.##") + "%",
+                                textcolor=reboundTextColor,
+                                style=label.style_none,
+                                color=color.new(color.white, 100),
+                                size = f_getLabelSize()
                             )
 
 
