@@ -79,7 +79,29 @@ var Zig.ZigZag smallZigZag =
      Zig.newInstance(smallSettings)
 
 
+//=========================================
+// 水平ライン色設定
+//=========================================
 
+// 押し安値（終点）
+color pullbackEndLineColor = input.color(
+     color.yellow,
+     "押し安値ライン色")
+
+// 押し目開始前高値
+color pullbackStartLineColor = input.color(
+     color.orange,
+     "押し目開始前高値ライン色")
+
+// 戻り高値（終点）
+color reboundEndLineColor = input.color(
+     color.aqua,
+     "戻り高値ライン色")
+
+// 戻り開始前安値
+color reboundStartLineColor = input.color(
+     color.fuchsia,
+     "戻り開始前安値ライン色")
 
 
 // --- ZigZag 更新 ---
@@ -187,7 +209,7 @@ if bigCountPB >= 2 and smallCountPB >= 3
                      y2 = lastLowPrice,
                      xloc = xloc.bar_time,
                      extend = extend.none,
-                     color = color.yellow,
+                     color = pullbackEndLineColor,
                      width = 2)
 
 
@@ -209,7 +231,7 @@ if bigCountPB >= 2 and smallCountPB >= 3
                      y2 = firstPullStartPrice,
                      xloc = xloc.bar_time,
                      extend = extend.none,
-                     color = color.orange,
+                     color = pullbackStartLineColor,
                      width = 2)
 
 
@@ -337,7 +359,7 @@ if bigCountRB >= 2 and smallCountRB >= 3
                      y2 = lastHighPrice,
                      xloc = xloc.bar_time,
                      extend = extend.none,
-                     color = color.aqua,
+                     color = reboundEndLineColor,
                      width = 2)
 
 
@@ -360,7 +382,7 @@ if bigCountRB >= 2 and smallCountRB >= 3
                      y2 = firstReboundStartPrice,
                      xloc = xloc.bar_time,
                      extend = extend.none,
-                     color = color.fuchsia,
+                     color = reboundStartLineColor,
                      width = 2)
 
 
