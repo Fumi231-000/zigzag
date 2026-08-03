@@ -1,0 +1,134 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © njs05
+
+//@version=6
+indicator("ジグザグライン緑と赤", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ライブラリのインポート
+import njs05/ZigZag/1 as Zig
+
+// --- ZigZag 設定 ---
+float deviationInput = input.float(8.5, 'Deviation (%)', minval=0.00001, maxval=100.0)
+int depthInput = input.int(1, 'Depth', minval=1)
+color lineColorInput = input.color(#2962FF, 'Line Color')
+bool extendInput = input.bool(true, 'Extend Last Pivot')
+string priceDiffInput = input.string('Percent', '', options=['Absolute','Percent'])
+
+var Zig.Settings settings = Zig.Settings.new(
+    deviationInput,
+    depthInput,
+    lineColorInput,
+    extendInput,
+    false,
+    false,
+    false,
+    "Percent")
+var Zig.ZigZag zigZag = Zig.newInstance(settings)
+
+
+
+
+
+
+// ================================
+// 小さい波用 ZigZag (Deviation
+// ================================
+
+int bigWaveLookback = input.int(
+     1,
+     "8.5波の参照数",
+     minval=1,
+     maxval=100)
+
+
+
+float smallDeviationInput = input.float(
+     3.5,
+     "Small ZigZag Deviation (%)",
+     minval=0.00001,
+     maxval=100)
+
+
+var Zig.Settings smallSettings =
+     Zig.Settings.new(
+          smallDeviationInput,
+          depthInput,
+          color.orange,
+          extendInput,
+          false,
+          false,
+          false,
+          priceDiffInput)
+
+
+var Zig.ZigZag smallZigZag =
+     Zig.newInstance(smallSettings)
+
+
+
+
+// --- ZigZag 更新 ---
+zigZag.update()
+smallZigZag.update()
+
+//=========================================
+// 小さい波ライン保存
+//=========================================
+
+var array<line> smallWaveLines = array.new_line()
+
+if array.size(smallWaveLines) > 0
+    for i = array.size(smallWaveLines) - 1 to 0
+        line.delete(array.get(smallWaveLines, i))
+    array.clear(smallWaveLines)
+
+
+
+//=========================================
+// 直近の大きい波内の小さいZigZagライン
+//=========================================
+
+int bigCount   = zigZag.pivots.size()
+int smallCount = smallZigZag.pivots.size()
+
+if bigCount >= 2 and smallCount >= 2
+
+    int waveCounter = 0
+    int b = bigCount - 1
+
+    while b > 0 and waveCounter < bigWaveLookback
+
+        Zig.Pivot pA = zigZag.pivots.get(b)
+        Zig.Pivot pB = zigZag.pivots.get(b - 1)
+
+        float move = pA.end.price - pB.end.price
+
+        int startTime = math.min(int(pA.end.time), int(pB.end.time))
+        int endTime   = math.max(int(pA.end.time), int(pB.end.time))
+
+        color waveColor = move > 0 ? color.lime : color.red
+
+        int s = 1
+
+        while s < smallCount
+
+            Zig.Pivot sp1 = smallZigZag.pivots.get(s - 1)
+            Zig.Pivot sp2 = smallZigZag.pivots.get(s)
+
+            if int(sp1.end.time) >= startTime and int(sp2.end.time) <= endTime
+
+                line l = line.new(
+                     x1 = int(sp1.end.time),
+                     y1 = sp1.end.price,
+                     x2 = int(sp2.end.time),
+                     y2 = sp2.end.price,
+                     xloc = xloc.bar_time,
+                     color = waveColor,
+                     width = 2)
+
+                array.push(smallWaveLines, l)
+
+            s += 1
+
+        waveCounter += 1
+        b -= 1
